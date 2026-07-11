@@ -1,0 +1,172 @@
+# 如果没有安装这些包，请先运行以下代码安装：
+# install.packages(c("ggplot2", "dplyr", "patchwork", "showtext"))
+#install.packages("showtext")
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(showtext) # 引入字体支持包
+
+# 开启全局字体支持，解决中文不显示或乱码问题
+showtext_auto()
+
+# ==============================================================================
+# ===================== 1. 可调参数配置区 (在此处修改数据) =====================
+# ==============================================================================
+
+# 1.1 染色体长度配置 (按 Chr01, Chr02... 顺序)
+chr_lengths_raw <- data.frame(
+  Chr = c("Chr01", "Chr02", "Chr04", "Chr05", "Chr06", "Chr07", "Chr08"),
+  Teosinte = c(316343917, 291633935, 269667600, 283132251, 189996101, 190649622, 239540040),
+  B73v5    = c(308452471, 243675191, 250330460, 226353449, 181357234, 185808916, 182411202)
+)
+
+# 1.2 Knob 特征数据配置
+# Fate列必须填写 "完全丢失" 或 "部分保留" 
+knob_data_raw <- rbind(
+  # -------- K1S (完全丢失) --------
+  data.frame(Region="K1S", Chr="Chr01", Genome="Teosinte", Start=25280941,  End=39975391,  Count=71841, Fate="完全丢失"),
+  data.frame(Region="K1S", Chr="Chr01", Genome="B73v5",    Start=0,         End=0,         Count=0,     Fate="完全丢失"),
+  
+  # -------- K2S (完全丢失) --------
+  data.frame(Region="K2S", Chr="Chr02", Genome="Teosinte", Start=19766215,  End=70536961,  Count=242740,Fate="完全丢失"),
+  data.frame(Region="K2S", Chr="Chr02", Genome="B73v5",    Start=0,         End=0,         Count=0,     Fate="完全丢失"),
+  
+  # -------- K5S (完全丢失) --------
+  data.frame(Region="K5S", Chr="Chr05", Genome="Teosinte", Start=13154249,  End=45400707,  Count=157281,Fate="完全丢失"),
+  data.frame(Region="K5S", Chr="Chr05", Genome="B73v5",    Start=0,         End=0,         Count=0,     Fate="完全丢失"),
+  
+  # -------- K6L (完全丢失) --------
+  data.frame(Region="K6L", Chr="Chr06", Genome="Teosinte", Start=152167289, End=162939088, Count=29360, Fate="完全丢失"),
+  data.frame(Region="K6L", Chr="Chr06", Genome="B73v5",    Start=0,         End=0,         Count=0,     Fate="完全丢失"),
+  
+  # -------- K4L (部分保留) --------
+  data.frame(Region="K4L", Chr="Chr04", Genome="Teosinte", Start=215110012, End=233948921, Count=76194, Fate="部分保留"),
+  data.frame(Region="K4L", Chr="Chr04", Genome="B73v5",    Start=232242588, End=233565354, Count=2802,  Fate="部分保留"),
+  
+  # -------- K5L (部分保留) --------
+  data.frame(Region="K5L", Chr="Chr05", Genome="Teosinte", Start=238330322, End=260904687, Count=107577,Fate="部分保留"),
+  data.frame(Region="K5L", Chr="Chr05", Genome="B73v5",    Start=199304491, End=203265131, Count=16422, Fate="部分保留"),
+  
+  # -------- K7L (部分保留) --------
+  data.frame(Region="K7L", Chr="Chr07", Genome="Teosinte", Start=150566527, End=163714191, Count=64051, Fate="部分保留"),
+  data.frame(Region="K7L", Chr="Chr07", Genome="B73v5",    Start=156651274, End=159137082, Count=10546, Fate="部分保留"),
+  
+  # -------- K8L (部分保留) --------
+  data.frame(Region="K8L", Chr="Chr08", Genome="Teosinte", Start=162594614, End=226154359, Count=262034,Fate="部分保留"),
+  data.frame(Region="K8L", Chr="Chr08", Genome="B73v5",    Start=160145385, End=163103272, Count=9168,  Fate="部分保留")
+)
+
+# 1.3 核心配色方案 (与 HTML 方案一致，凸显进化命运)
+color_palette <- c(
+  "完全丢失_Teosinte" = "#E63946", # 红色
+  "完全丢失_B73v5"    = "#FCA311", # B73这里是0，颜色主要用于图例占位
+  "部分保留_Teosinte" = "#1D3557", # 深蓝色
+  "部分保留_B73v5"    = "#457B9D"  # 浅蓝色
+)
+
+# ==============================================================================
+# ========================= 2. 自动化数据处理区 =========================
+# ==============================================================================
+
+# 为数据添加组合分类，方便统一着色
+knob_data <- knob_data_raw %>%
+  mutate(
+    Style = paste(Fate, Genome, sep="_"),
+    Genome = factor(Genome, levels = c("Teosinte", "B73v5")),
+    Fate = factor(Fate, levels = c("完全丢失", "部分保留"))
+  )
+
+# 核型图染色体基底数据转换
+chr_long <- chr_lengths_raw %>%
+  tidyr::pivot_longer(cols = c(Teosinte, B73v5), names_to = "Genome", values_to = "Length") %>%
+  mutate(
+    # 将 Chr 转换为数字索引，方便在图中错开位置绘制双轨 (Teosinte在左，B73在右)
+    Chr_Idx = as.numeric(as.factor(Chr)),
+    Offset_X = ifelse(Genome == "Teosinte", Chr_Idx - 0.2, Chr_Idx + 0.2),
+    Genome = factor(Genome, levels = c("Teosinte", "B73v5"))
+  )
+
+# 为 Knob 坐标也计算对应的偏移位置 (单位转换为 Mb)
+knob_karyotype <- knob_data %>%
+  filter(Start > 0 & End > 0) %>% # 过滤掉长度为0(完全丢失在B73的残影)的行
+  mutate(
+    Chr_Idx = as.numeric(as.factor(Chr)),
+    Offset_X = ifelse(Genome == "Teosinte", Chr_Idx - 0.2, Chr_Idx + 0.2),
+    Start_Mb = Start / 1e6,
+    End_Mb = End / 1e6,
+    # 强制让极小的残余 Knob 至少有1Mb的显示厚度，否则肉眼看不见
+    End_Mb = ifelse((End_Mb - Start_Mb) < 1.5, Start_Mb + 1.5, End_Mb)
+  )
+
+# ==============================================================================
+# ========================= 3. 图表绘制区 =========================
+# ==============================================================================
+
+# --- Plot A: 拷贝数柱状图 (绝对定量对比) ---
+p_bar <- ggplot(knob_data, aes(x = Region, y = Count, fill = Style)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  facet_grid(. ~ Fate, scales = "free_x", space = "free_x") +
+  scale_fill_manual(values = color_palette) +
+  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.05))) +
+  theme_classic(base_size = 14) +
+  labs(
+    title = "A. Knob 拷贝数绝对定量分析",
+    x = "Knob 区域",
+    y = "总拷贝数 (Total Knob Num)"
+  ) +
+  theme(
+    legend.position = "none", # 图例我们在核型图里统一给
+    strip.background = element_rect(fill = "#F8F9FA", color = "black", linewidth = 1),
+    strip.text = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(face = "bold", size = 11, color="black"),
+    axis.title = element_text(face = "bold"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1)
+  )
+
+# --- Plot B: 物理核型图 (双轨分类图) ---
+p_karyo <- ggplot() +
+  # 1. 绘制染色体灰色基底骨架
+  geom_segment(data = chr_long, 
+               aes(x = Offset_X, xend = Offset_X, y = 0, yend = Length / 1e6),
+               color = "#CED4DA", linewidth = 7, lineend = "round") +
+  # 2. 绘制 Knob 色块
+  geom_segment(data = knob_karyotype,
+               aes(x = Offset_X, xend = Offset_X, y = Start_Mb, yend = End_Mb, color = Style),
+               linewidth = 7.5, lineend = "butt") +
+  scale_color_manual(values = color_palette, 
+                     name = "基因组状态",
+                     labels = c("完全丢失 (Teosinte 特有)", "完全丢失 (B73 残影)",
+                                "部分保留 (Teosinte 丰度)", "部分保留 (B73v5 丰度)")) +
+  # 设置 X 轴的标签为染色体名字
+  scale_x_continuous(breaks = 1:length(unique(chr_long$Chr)), 
+                     labels = unique(chr_long$Chr)) +
+  # 翻转 Y 轴，让染色体的 0 刻度在上方
+  scale_y_reverse(expand = expansion(mult = c(0.02, 0.05))) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "B. 染色体物理位置动态变异 (核型图)",
+    x = "染色体",
+    y = "物理位置 (Mb)"
+  ) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(face = "bold", size = 12, color="black"),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+
+# --- 拼接图表并输出 ---
+# 使用 patchwork 将 柱状图 放在上面，核型图 放在下面
+final_plot <- p_bar / p_karyo + plot_layout(heights = c(1, 1.5))
+
+# 渲染图片到屏幕
+print(final_plot)
+
+# ==============================================================================
+# ======================== 4. 高清图片保存代码 =========================
+# (取消下方注释即可自动保存为 300dpi 的论文原图)
+# ==============================================================================
+# ggsave("Evolution_of_Knobs.png", final_plot, width = 10, height = 12, dpi = 300)
+# ggsave("Evolution_of_Knobs.pdf", final_plot, width = 10, height = 12)
