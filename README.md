@@ -47,6 +47,10 @@ results/          generated output (ignored)
 Variants/         VCF normalization/filtering and knob-interval extraction
 Fst/              pairwise windowed FST calculation and summarization
 Synteny/          assembly alignment and knob-flanking-window utilities
+Annotation/       monomer-hit merging and chromosome/array summaries
+Recombination/    annotate recombination windows by knob overlap
+Sequence/         k-mer based monomer clustering
+GeneContext/      nearest-gene reports for knob arrays
 ```
 
 ## Interpretation notes
@@ -57,4 +61,4 @@ Do not commit raw reads, assemblies, BAM/CRAM, VCF, or large intermediates. Ever
 
 ## External command-line tools
 
-The R length plot needs `ggplot2`, `dplyr`, and `readr`. The optional genomics workflows additionally use `bcftools`/`tabix` (Variants), `vcftools` (FST), and `minimap2` plus `bedtools` (Synteny). Their directory READMEs give exact commands and coordinate conventions.
+The R length plot needs `ggplot2`, `dplyr`, and `readr`. The optional genomics workflows additionally use `bcftools`/`tabix` (Variants), `vcftools` (FST), `minimap2` plus `bedtools` (Synteny/Annotation), and `numpy` plus `scikit-learn` (Sequence). Their directory READMEs give exact commands and coordinate conventions.
